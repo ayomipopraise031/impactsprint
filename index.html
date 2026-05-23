@@ -328,6 +328,14 @@
 
     function confirmApply() {
       if (!applyTarget) return;
+      sendNotification({
+        kind: "application",
+        name: profile.name,
+        email: profile.email,
+        stateCode: profile.stateCode,
+        sprint: `${applyTarget.title} (${applyTarget.ngo})`,
+        motivation,
+      });
       setState((s) => {
         if (s.applied.includes(applyTarget.id)) return s;
         const messages = { ...s.messages };
@@ -398,13 +406,37 @@
     const toggleDraftSkill = (s) =>
       setDraft((d) => ({ ...d, skills: d.skills.includes(s) ? d.skills.filter((x) => x !== s) : [...d.skills, s] }));
 
-    function startVerification() {
+    async function sendNotification(payload) {
+      try {
+        const r = await fetch("/api/send-email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!r.ok) console.warn("Email API returned", r.status);
+        return r.ok;
+      } catch (e) {
+        console.warn("Email API unreachable:", e);
+        return false;
+      }
+    }
+
+    async function startVerification() {
       setVerifying(true);
-      setTimeout(() => {
-        setVerifying(false);
-        setVerified(true);
-        setTimeout(() => setScreen("feed"), 1200);
-      }, 1500);
+      // Fire the email in parallel with the 1.5s "verifying" animation.
+      await Promise.all([
+        sendNotification({
+          kind: "signup",
+          name: profile.name,
+          email: profile.email,
+          stateCode: profile.stateCode,
+          discipline: profile.discipline,
+        }),
+        new Promise((r) => setTimeout(r, 1500)),
+      ]);
+      setVerifying(false);
+      setVerified(true);
+      setTimeout(() => setScreen("feed"), 1200);
     }
 
     // ─── Rendering ───────────────────────────────────────────────────────
@@ -700,7 +732,15 @@
                     <>
                       <textarea value={feedback} onChange={(e) => setFeedback(e.target.value)} placeholder="How is ImpactSprint working for you?"
                         style={{ width: "100%", height: 64, borderRadius: 8, border: `1px solid ${feedback ? C.green : C.border}`, padding: "8px 10px", fontSize: 11, resize: "none", outline: "none", boxSizing: "border-box", marginBottom: 8 }} />
-                      <Btn disabled={!feedback.trim()} onClick={() => update({ feedbackSent: true })}>
+                      <Btn disabled={!feedback.trim()} onClick={() => {
+                        sendNotification({
+                          kind: "feedback",
+                          name: profile.name,
+                          email: profile.email,
+                          feedback,
+                        });
+                        update({ feedbackSent: true });
+                      }}>
                         {feedback.trim() ? "Send feedback" : "Type something to send"}
                       </Btn>
                     </>

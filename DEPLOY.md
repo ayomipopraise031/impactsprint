@@ -44,6 +44,26 @@ Vercel doesn't have a no-account drag-and-drop, but Netlify does. If you just wa
 
 ---
 
+## Environment variables (required for email)
+
+The demo includes a Vercel serverless function at `api/send-email.js` that emails you when a tester signs up, applies, or sends feedback. For it to work, set these in your Vercel project:
+
+**Vercel → your project → Settings → Environment Variables**
+
+| Name | Value | Notes |
+|---|---|---|
+| `RESEND_API_KEY` | `re_...` from [resend.com/api-keys](https://resend.com/api-keys) | Required. Generate fresh — never commit it. |
+| `NOTIFY_EMAIL` | Your email address | Required. **Must match your Resend account email** until you verify a domain at [resend.com/domains](https://resend.com/domains). |
+| `SEND_WELCOME` | `true` | Optional. Also sends welcome emails to testers. **Requires a verified domain** in Resend, otherwise testers won't receive anything. |
+
+After adding env vars, redeploy (Deployments → ⋯ → Redeploy) so the function picks them up.
+
+### Local testing without env vars
+
+The frontend silently ignores email failures, so the demo works fine even when the API is unreachable or env vars are missing — testers still flow through onboarding, application, feedback. You just won't receive notifications.
+
+---
+
 ## What testers see
 
 - First visit: onboarding form (name, email, NYSC code, discipline)

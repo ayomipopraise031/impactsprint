@@ -1,0 +1,11 @@
+# env & secrets
+.env
+.env.*
+*.env
+
+# vercel
+.vercel
+
+# deps & build
+node_modules/
+.DS_Store
