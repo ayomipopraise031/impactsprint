@@ -317,6 +317,7 @@
       notifications: Array.isArray(base.notifications) ? base.notifications : [],
       appliedAt: existingAppliedAt,
       applicationStatus: existingStatus,
+      view: base.view || ((base.profile && base.profile.discipline) ? "demo" : "landing"),
     };
   };
 
@@ -588,11 +589,21 @@
       setTimeout(() => setScreen("feed"), 1200);
     }
 
+    function enterDemo() {
+      update({ view: "demo" });
+      if (!profile.discipline) setScreen("onboarding");
+      else setScreen("feed");
+    }
+
     // ─── Rendering ───────────────────────────────────────────────────────
+    if (state.view === "landing") {
+      return <Landing onEnter={enterDemo} hasProfile={!!profile.discipline} />;
+    }
     return (
       <div style={{ minHeight: "100vh", background: C.surface, display: "flex", flexDirection: "column", alignItems: "center", padding: "20px 12px 28px", gap: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <Logo size={24} /><Wordmark size={16} />
+          <button onClick={() => update({ view: "landing" })} style={{ background: "none", border: "none", color: C.hint, fontSize: 10, cursor: "pointer", marginLeft: 4, padding: "2px 6px" }}>← Home</button>
         </div>
 
         <Phone>
@@ -1364,6 +1375,115 @@ ${badges.length === 0 ? `
           </span>
         )}
       </button>
+    );
+  }
+
+  function Landing({ onEnter, hasProfile }) {
+    const features = [
+      { icon: "🎯", title: "Match with verified NGOs", body: "Every NGO is CAC-registered and vetted. No scams, no ghost projects." },
+      { icon: "⚡", title: "Short, focused sprints", body: "1–4 week commitments with real deliverables you can show employers, not vague volunteering." },
+      { icon: "⭐", title: "Build an endorsed portfolio", body: "Earn NGO-endorsed badges with quotes. Export a polished PDF to share with recruiters." },
+    ];
+    const steps = [
+      { n: 1, title: "Verify your NYSC posting", body: "Sign up with your NYSC state code. We confirm with your inspector." },
+      { n: 2, title: "Pick a sprint that fits", body: "Filter by skill, sector, location. Apply with a short motivation note." },
+      { n: 3, title: "Deliver and earn", body: "Submit your work in the workspace. NGOs endorse, you build a public portfolio." },
+    ];
+    return (
+      <div style={{ minHeight: "100vh", background: "#fff", color: C.g900, fontFamily: "system-ui, -apple-system, sans-serif" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 22px", borderBottom: `1px solid ${C.border}`, position: "sticky", top: 0, background: "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)", zIndex: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <Logo size={28} /><Wordmark size={18} />
+          </div>
+          <button onClick={onEnter} style={{ background: C.green, color: "#fff", border: "none", padding: "9px 18px", borderRadius: 22, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+            {hasProfile ? "Open app →" : "Try the demo →"}
+          </button>
+        </div>
+        <div style={{ background: `linear-gradient(135deg, ${C.g900} 0%, ${C.g700} 100%)`, color: "#fff", padding: "60px 22px 80px", textAlign: "center", position: "relative", overflow: "hidden" }}>
+          <div style={{ position: "absolute", top: -50, right: -50, width: 220, height: 220, borderRadius: "50%", background: "rgba(245,200,66,0.08)" }} />
+          <div style={{ position: "absolute", bottom: -80, left: -50, width: 280, height: 280, borderRadius: "50%", background: "rgba(168,223,191,0.06)" }} />
+          <div style={{ position: "relative", maxWidth: 720, margin: "0 auto" }}>
+            <div style={{ display: "inline-block", background: "rgba(245,200,66,0.16)", color: C.gold, fontSize: 11, fontWeight: 700, padding: "5px 12px", borderRadius: 14, marginBottom: 18, letterSpacing: "0.04em", textTransform: "uppercase" }}>
+              For NYSC Corps Members
+            </div>
+            <h1 style={{ fontSize: "clamp(28px, 6vw, 44px)", fontWeight: 900, lineHeight: 1.1, marginBottom: 16, letterSpacing: "-0.02em" }}>
+              Build a portfolio that<br /><span style={{ color: C.gold }}>actually means something.</span>
+            </h1>
+            <p style={{ fontSize: "clamp(14px, 2.5vw, 17px)", color: C.g200, lineHeight: 1.6, marginBottom: 26, maxWidth: 560, marginLeft: "auto", marginRight: "auto" }}>
+              ImpactSprint matches NYSC corps members with short, high-impact sprints from verified NGOs. Real work, real endorsements, a real portfolio you can show employers after service year.
+            </p>
+            <button onClick={onEnter} style={{ background: C.gold, color: C.g900, border: "none", padding: "14px 28px", borderRadius: 28, fontSize: 15, fontWeight: 800, cursor: "pointer", boxShadow: "0 8px 24px rgba(245,200,66,0.25)" }}>
+              {hasProfile ? "Open the app →" : "Try the demo — no signup →"}
+            </button>
+            <div style={{ marginTop: 14, fontSize: 11, color: C.g200, opacity: 0.85 }}>
+              {hasProfile ? "Continue where you left off" : "Free during NYSC · 5 sprints live this week"}
+            </div>
+          </div>
+        </div>
+        <div style={{ maxWidth: 980, margin: "0 auto", padding: "56px 22px 28px" }}>
+          <div style={{ textAlign: "center", marginBottom: 36 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: C.green, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>What you get</div>
+            <h2 style={{ fontSize: "clamp(22px, 4vw, 30px)", fontWeight: 800, color: C.g900, marginBottom: 8, letterSpacing: "-0.01em" }}>NYSC, but make it count.</h2>
+            <p style={{ fontSize: 14, color: C.muted, maxWidth: 520, margin: "0 auto", lineHeight: 1.6 }}>
+              Most corps members finish service with nothing to show. ImpactSprint turns your 11 months into measurable impact.
+            </p>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 18 }}>
+            {features.map((f, i) => (
+              <div key={i} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: 22 }}>
+                <div style={{ fontSize: 30, marginBottom: 10 }}>{f.icon}</div>
+                <h3 style={{ fontSize: 16, fontWeight: 800, color: C.g900, marginBottom: 7 }}>{f.title}</h3>
+                <p style={{ fontSize: 13, color: C.muted, lineHeight: 1.6 }}>{f.body}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{ background: C.surface, borderTop: `1px solid ${C.border}`, borderBottom: `1px solid ${C.border}`, padding: "56px 22px" }}>
+          <div style={{ maxWidth: 980, margin: "0 auto" }}>
+            <div style={{ textAlign: "center", marginBottom: 36 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.green, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>How it works</div>
+              <h2 style={{ fontSize: "clamp(22px, 4vw, 30px)", fontWeight: 800, color: C.g900, letterSpacing: "-0.01em" }}>Three steps from signup to portfolio.</h2>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 20 }}>
+              {steps.map((s) => (
+                <div key={s.n} style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 14, padding: 22, position: "relative" }}>
+                  <div style={{ position: "absolute", top: -16, left: 22, width: 32, height: 32, borderRadius: "50%", background: C.green, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 14 }}>{s.n}</div>
+                  <h3 style={{ fontSize: 15, fontWeight: 800, color: C.g900, marginTop: 12, marginBottom: 7 }}>{s.title}</h3>
+                  <p style={{ fontSize: 12.5, color: C.muted, lineHeight: 1.6 }}>{s.body}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div style={{ padding: "48px 22px", textAlign: "center" }}>
+          <div style={{ maxWidth: 720, margin: "0 auto", display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
+            {[["5", "Live sprints"], ["37", "NYSC states served"], ["100%", "NGO-verified"]].map(([n, l]) => (
+              <div key={l}>
+                <div style={{ fontSize: "clamp(28px, 5vw, 40px)", fontWeight: 900, color: C.green, lineHeight: 1 }}>{n}</div>
+                <div style={{ fontSize: 11, color: C.muted, marginTop: 6, textTransform: "uppercase", letterSpacing: "0.08em" }}>{l}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{ padding: "0 22px 64px", textAlign: "center" }}>
+          <div style={{ maxWidth: 720, margin: "0 auto", background: `linear-gradient(135deg, ${C.g900}, ${C.g700})`, borderRadius: 22, padding: "44px 28px", color: "#fff" }}>
+            <h2 style={{ fontSize: "clamp(22px, 4vw, 30px)", fontWeight: 800, marginBottom: 10, letterSpacing: "-0.01em" }}>Ready to make your service year count?</h2>
+            <p style={{ fontSize: 14, color: C.g200, lineHeight: 1.6, marginBottom: 22 }}>Try the demo. No signup, no payment — see how ImpactSprint works in under 2 minutes.</p>
+            <button onClick={onEnter} style={{ background: C.gold, color: C.g900, border: "none", padding: "13px 26px", borderRadius: 26, fontSize: 14, fontWeight: 800, cursor: "pointer" }}>
+              {hasProfile ? "Open the app →" : "Try the demo →"}
+            </button>
+          </div>
+        </div>
+        <div style={{ borderTop: `1px solid ${C.border}`, padding: "20px 22px", textAlign: "center", color: C.hint, fontSize: 11, display: "flex", justifyContent: "center", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Logo size={18} /> <Wordmark size={12} />
+          </div>
+          <span>·</span>
+          <span>Built for NYSC corps members</span>
+          <span>·</span>
+          <a href="mailto:hello@impactsprint.ng" style={{ color: C.green, textDecoration: "none" }}>hello@impactsprint.ng</a>
+        </div>
+      </div>
     );
   }
 
