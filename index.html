@@ -264,25 +264,46 @@
   }
 
   // ─── Initial state ──────────────────────────────────────────────────────
-  const blankProfile = { name: "", email: "", stateCode: "", discipline: "", bio: "", skills: [], hours: 6, photo: null };
-  const initialState = () => loadState() || {
-    profile: blankProfile,
-    applied: [],
-    activeSprintId: null,
-    messages: { /* sprintId: [...] */ },
-    submitted: {},   // sprintId: true
-    deliverables: {},// sprintId: {name, size}
-    badges: [{
-      ngo: "EduReach Nigeria",
-      title: "Social Media Campaign for Digital Literacy",
-      tags: ["Design", "Social Media"],
-      sector: "Education",
-      hours: 28,
-      date: "2024-09-12",
-      endorsement: "Outstanding creative work delivered ahead of schedule. Their grasp of accessible language brought our digital literacy messaging to life in a way our team couldn't have done alone.",
-      status: "endorsed",
-    }],
-    feedbackSent: false,
+  const blankProfile = { name: "", email: "", phone: "", stateCode: "", discipline: "", bio: "", skills: [], hours: 6, photo: null };
+  // Nigerian mobile number: +234 7/8/9 + 9 digits, OR 0 + 7/8/9 + 9 digits
+  const phoneRe = /^(\+234|0)[789]\d{9}$/;
+  const isPhoneValid = (p) => phoneRe.test(String(p || "").replace(/\s/g, ""));
+  const profileCompleteness = (p) => {
+    const fields = [
+      !!p.name,
+      /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(p.email || ""),
+      isPhoneValid(p.phone),
+      !!p.discipline,
+      validateStateCode(p.stateCode).valid,
+      !!p.bio,
+      (p.skills || []).length >= 3,
+      !!p.photo,
+    ];
+    return Math.round((fields.filter(Boolean).length / fields.length) * 100);
+  };
+  const initialState = () => {
+    const loaded = loadState();
+    const base = loaded || {
+      profile: blankProfile,
+      applied: [],
+      activeSprintId: null,
+      messages: {},
+      submitted: {},
+      deliverables: {},
+      badges: [{
+        ngo: "EduReach Nigeria",
+        title: "Social Media Campaign for Digital Literacy",
+        tags: ["Design", "Social Media"],
+        sector: "Education",
+        hours: 28,
+        date: "2024-09-12",
+        endorsement: "Outstanding creative work delivered ahead of schedule. Their grasp of accessible language brought our digital literacy messaging to life in a way our team couldn't have done alone.",
+        status: "endorsed",
+      }],
+      feedbackSent: false,
+    };
+    // Backfill phone on existing localStorage (safe, only adds the missing field)
+    return { ...base, profile: { phone: "", ...(base.profile || {}) } };
   };
 
   // ─── Main App ───────────────────────────────────────────────────────────
@@ -845,6 +866,34 @@
                   : <button onClick={startEdit} style={{ background: "none", color: C.g200, border: `1px solid ${C.g200}`, borderRadius: 16, padding: "5px 14px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Edit</button>}
               />
               <Scroll style={{ padding: 16 }}>
+                {(() => {
+                  const p = editingProfile ? draft : profile;
+                  const pct = profileCompleteness(p);
+                  const missing = [
+                    !p.photo && "a photo",
+                    !p.bio && "a bio",
+                    !isPhoneValid(p.phone) && "phone",
+                    (p.skills || []).length < 3 && `${3 - (p.skills || []).length} more skill${(p.skills || []).length === 2 ? "" : "s"}`,
+                  ].filter(Boolean).slice(0, 2);
+                  return (
+                    <div style={{ background: pct === 100 ? C.g50 : "#fff", border: `1px solid ${pct === 100 ? C.g200 : C.border}`, borderRadius: 12, padding: 11, marginBottom: 14 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 7 }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                          {pct === 100 ? "✓ Profile complete" : "Profile completeness"}
+                        </div>
+                        <div style={{ fontSize: 12, fontWeight: 800, color: pct === 100 ? C.green : pct >= 60 ? C.goldDark : C.muted }}>{pct}%</div>
+                      </div>
+                      <div style={{ height: 6, background: C.g200, borderRadius: 3, overflow: "hidden" }}>
+                        <div style={{ width: `${pct}%`, height: "100%", background: `linear-gradient(90deg, ${C.green}, ${C.gold})`, borderRadius: 3, transition: "width .4s" }} />
+                      </div>
+                      {pct < 100 && missing.length > 0 && (
+                        <div style={{ fontSize: 9, color: C.hint, marginTop: 6, lineHeight: 1.5 }}>
+                          Stronger profiles get 3× more NGO views. Add {missing.join(" and ")}.
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 18 }}>
                   <Avatar photo={(editingProfile ? draft : profile).photo} name={(editingProfile ? draft : profile).name} size={80} />
                   {editingProfile && (
@@ -867,6 +916,9 @@
                   <>
                     <Field label="Full Name" value={draft.name} onChange={(v) => setDraft({ ...draft, name: v })} valid={!!draft.name} />
                     <Field label="Email" type="email" value={draft.email} onChange={(v) => setDraft({ ...draft, email: v })} valid={/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(draft.email)} />
+                    {(() => { const ok = isPhoneValid(draft.phone); return (
+                    <Field label="Phone Number" type="tel" value={draft.phone || ""} onChange={(v) => setDraft({ ...draft, phone: v })} placeholder="e.g. 08012345678 or +2348012345678" valid={ok} error={draft.phone && !ok ? "Use a Nigerian mobile: 080… 081… 070… 090… 091…" : ""} hint={ok ? "Phone format valid" : ""} />
+                    ); })()}
                     {(() => { const dc = validateStateCode(draft.stateCode); return (
                     <Field label="NYSC State Code" value={draft.stateCode} onChange={(v) => setDraft({ ...draft, stateCode: v.toUpperCase() })} placeholder="e.g. LA/23A/1234" valid={dc.valid} error={dc.error} hint={dc.valid ? `${dc.state} State` : ""} />
                     ); })()}
@@ -894,7 +946,11 @@
                 ) : (
                   <>
                     <Card label="About">{profile.bio || <span style={{ color: C.hint }}>No bio yet — tap Edit to add one.</span>}</Card>
-                    <Card label="Contact"><div>✉ {profile.email || "—"}</div><div style={{ marginTop: 3 }}>🪪 {profile.stateCode || "—"}</div></Card>
+                    <Card label="Contact">
+                      <div>✉ {profile.email || "—"}</div>
+                      <div style={{ marginTop: 3 }}>📱 {profile.phone || <span style={{ color: C.hint }}>No phone — tap Edit to add</span>}</div>
+                      <div style={{ marginTop: 3 }}>🪪 {profile.stateCode || "—"}</div>
+                    </Card>
                     <Card label="Skills">{profile.skills.length ? <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>{profile.skills.map((s) => <Tag key={s}>{s}</Tag>)}</div> : <span style={{ color: C.hint, fontSize: 11 }}>No skills added yet.</span>}</Card>
                     <Card label="Availability">⏱ {profile.hours} hours per week</Card>
                     <div style={{ height: 8 }} />
