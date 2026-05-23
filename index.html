@@ -302,11 +302,21 @@
       }],
       feedbackSent: false,
     };
-    // Backfill phone + notifications on existing localStorage (safe, additive)
+    // Backfill phone + notifications + application tracking (safe, additive)
+    const existingApplied = Array.isArray(base.applied) ? base.applied : [];
+    const existingAppliedAt = base.appliedAt && typeof base.appliedAt === "object" ? { ...base.appliedAt } : {};
+    const existingStatus = base.applicationStatus && typeof base.applicationStatus === "object" ? { ...base.applicationStatus } : {};
+    // Pre-state-machine applications had no timestamp — treat as already accepted
+    for (const id of existingApplied) {
+      if (!existingAppliedAt[id]) existingAppliedAt[id] = Date.now() - 100000;
+      if (!existingStatus[id]) existingStatus[id] = "accepted";
+    }
     return {
       ...base,
       profile: { phone: "", ...(base.profile || {}) },
       notifications: Array.isArray(base.notifications) ? base.notifications : [],
+      appliedAt: existingAppliedAt,
+      applicationStatus: existingStatus,
     };
   };
 
@@ -327,6 +337,7 @@
     const [feedback, setFeedback] = useState("");
     const [editingProfile, setEditingProfile] = useState(false);
     const [notifOpen, setNotifOpen] = useState(false);
+    const [tick, setTick] = useState(0);
     const [draft, setDraft] = useState(null);
     const [search, setSearch] = useState("");
     const [filter, setFilter] = useState("All");
@@ -335,6 +346,54 @@
 
     // Persist on every change
     useEffect(() => { saveState(state); }, [state]);
+
+    // Tick every 2s — drives the application state machine
+    useEffect(() => {
+      const id = setInterval(() => setTick((t) => t + 1), 2000);
+      return () => clearInterval(id);
+    }, []);
+
+    // Application state machine: submitted → reviewing (7s) → accepted (18s)
+    useEffect(() => {
+      const now = Date.now();
+      const applied = Array.isArray(state.applied) ? state.applied : [];
+      const appliedAt = state.appliedAt && typeof state.appliedAt === "object" ? state.appliedAt : {};
+      const status = state.applicationStatus && typeof state.applicationStatus === "object" ? state.applicationStatus : {};
+      const nextStatus = { ...status };
+      const newNotifs = [];
+      let acceptedSprint = null;
+      let changed = false;
+      for (const id of applied) {
+        const at = appliedAt[id];
+        if (!at) continue;
+        const elapsed = (now - at) / 1000;
+        const cur = nextStatus[id] || "submitted";
+        const sprint = SPRINTS.find((sp) => sp.id === id);
+        if (!sprint) continue;
+        let target = cur;
+        if (elapsed >= 18 && cur !== "accepted") target = "accepted";
+        else if (elapsed >= 7 && cur === "submitted") target = "reviewing";
+        if (target !== cur) {
+          nextStatus[id] = target;
+          changed = true;
+          if (target === "reviewing") {
+            newNotifs.push({ type: "reviewing", title: `🔎 ${sprint.ngo} is reviewing your application`, body: sprint.title });
+          } else if (target === "accepted") {
+            newNotifs.push({ type: "accepted", title: `🎉 Accepted to ${sprint.title}`, body: `${sprint.ngo} confirmed your spot.` });
+            acceptedSprint = sprint;
+          }
+        }
+      }
+      if (changed) {
+        const notifList = newNotifs.map((n) => ({ id: `n${Date.now()}${Math.random().toString(36).slice(2, 6)}`, ts: Date.now(), read: false, ...n }));
+        setState((s) => ({
+          ...s,
+          applicationStatus: nextStatus,
+          notifications: [...notifList, ...(Array.isArray(s.notifications) ? s.notifications : [])],
+        }));
+        if (acceptedSprint) setCongrats(acceptedSprint);
+      }
+    }, [tick]);
 
     const update = (patch) => setState((s) => ({ ...s, ...patch }));
     const updateProfile = (patch) => setState((s) => ({ ...s, profile: { ...s.profile, ...patch } }));
@@ -391,30 +450,42 @@
         sprint: `${applyTarget.title} (${applyTarget.ngo})`,
         motivation,
       });
+      const now = Date.now();
+      const target = applyTarget;
       setState((s) => {
-        if (s.applied.includes(applyTarget.id)) return s;
-        const messages = { ...s.messages };
-        messages[applyTarget.id] = [{ from: "ngo", text: "Hi, please focus on the tenant rights section first 🙏" }];
+        if ((s.applied || []).includes(target.id)) return s;
+        const messages = { ...(s.messages || {}) };
+        messages[target.id] = [{ from: "ngo", text: "Hi, thanks for applying. We'll review and get back to you shortly 🙏" }];
         const newBadge = {
-          ngo: applyTarget.ngo,
-          title: applyTarget.title,
-          tags: applyTarget.tags,
-          sector: applyTarget.sector,
-          hours: applyTarget.hrs,
+          ngo: target.ngo,
+          title: target.title,
+          tags: target.tags,
+          sector: target.sector,
+          hours: target.hrs,
           date: new Date().toISOString(),
           status: "awaiting",
         };
+        const submittedNotif = {
+          id: `n${now}${Math.random().toString(36).slice(2, 6)}`,
+          type: "submitted",
+          title: `📨 Application sent to ${target.ngo}`,
+          body: target.title,
+          ts: now,
+          read: false,
+        };
         return {
           ...s,
-          applied: [...s.applied, applyTarget.id],
-          activeSprintId: applyTarget.id,
+          applied: [...(s.applied || []), target.id],
+          activeSprintId: target.id,
           messages,
-          badges: [newBadge, ...s.badges.filter(b => b.title !== applyTarget.title)],
+          badges: [newBadge, ...(s.badges || []).filter((b) => b.title !== target.title)],
+          appliedAt: { ...(s.appliedAt || {}), [target.id]: now },
+          applicationStatus: { ...(s.applicationStatus || {}), [target.id]: "submitted" },
+          notifications: [submittedNotif, ...(Array.isArray(s.notifications) ? s.notifications : [])],
         };
       });
-      addNotif("accepted", `🎉 Accepted to ${applyTarget.title}`, `${applyTarget.ngo} has confirmed your spot.`);
-      setCongrats(applyTarget);
-      setScreen("workspace");
+      setApplyTarget(null);
+      setScreen("feed");
     }
 
     function sendUpdate() {
@@ -641,14 +712,19 @@
                 )}
                 {visibleSprints.map((s) => {
                   const applied = state.applied.includes(s.id);
+                  const st = (state.applicationStatus || {})[s.id];
+                  const stLabel = ({ submitted: "📨 Submitted", reviewing: "🔎 Under review", accepted: "✓ Accepted" })[st];
+                  const stColor = ({ submitted: C.goldDark, reviewing: C.goldBorder, accepted: C.green })[st] || C.goldDark;
                   return (
                     <div key={s.id} onClick={() => selectSprint(s)}
                       style={{ background: "#fff", borderRadius: 14, border: `0.5px solid ${C.border}`, overflow: "hidden", marginBottom: 10, cursor: "pointer" }}>
                       <div style={{ background: C.g50, padding: "12px 14px 10px", borderBottom: `0.5px solid ${C.border}` }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, color: C.muted, marginBottom: 5 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, color: C.muted, marginBottom: 5, flexWrap: "wrap" }}>
                           <span style={{ width: 5, height: 5, borderRadius: "50%", background: applied ? C.goldBorder : C.green }} />
-                          {s.ngo} · {s.loc}
-                          {applied && <span style={{ background: C.goldBg, color: C.goldDark, fontSize: 8, fontWeight: 700, padding: "1px 6px", borderRadius: 6, border: `0.5px solid ${C.goldBorder}` }}>Applied</span>}
+                          <span>{s.ngo} · {s.loc}</span>
+                          {applied && stLabel && (
+                            <span style={{ background: "#fff", color: stColor, fontSize: 8, fontWeight: 700, padding: "1px 6px", borderRadius: 6, border: `0.5px solid ${stColor}` }}>{stLabel}</span>
+                          )}
                         </div>
                         <div style={{ fontSize: 15, fontWeight: 800, color: C.g900, lineHeight: 1.2, marginBottom: 8 }}>{s.title}</div>
                         <MatchBar pct={s.match} label={s.mLabel} level={s.mLevel} />
@@ -755,6 +831,29 @@
             <>
               <Header title="Workspace" sub={activeSprint ? activeSprint.title : "No active sprint"} onBack={() => setScreen("feed")} right={<NotifBell count={unreadCount} onClick={() => setNotifOpen(true)} />} />
               <Scroll style={{ padding: 12 }}>
+                {(() => {
+                  const activeStatus = activeSprint ? (state.applicationStatus || {})[activeSprint.id] : null;
+                  const pending = activeSprint && (activeStatus === "submitted" || activeStatus === "reviewing");
+                  if (pending) {
+                    const phase = activeStatus === "reviewing" ? "Under review" : "Submitted";
+                    const phaseBody = activeStatus === "reviewing"
+                      ? `${activeSprint.ngo} is reading your application now. Expect a response within a few moments.`
+                      : `Your application to ${activeSprint.ngo} has been received. NGOs typically respond within 24–48 hours.`;
+                    return (
+                      <div style={{ textAlign: "center", padding: "40px 18px", color: C.muted }}>
+                        <div style={{ fontSize: 34, marginBottom: 10 }}>{activeStatus === "reviewing" ? "🔎" : "📨"}</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: C.g900, marginBottom: 4 }}>{phase}</div>
+                        <div style={{ fontSize: 11, color: C.muted, marginBottom: 14, lineHeight: 1.55, maxWidth: 260, margin: "0 auto 16px" }}>{phaseBody}</div>
+                        <div style={{ background: C.g50, border: `0.5px solid ${C.border}`, borderRadius: 10, padding: 12, textAlign: "left", marginBottom: 14 }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: C.green, marginBottom: 4, textTransform: "uppercase" }}>{activeSprint.ngo}</div>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: C.g900 }}>{activeSprint.title}</div>
+                        </div>
+                        <Btn variant="outline" onClick={() => setScreen("feed")}>← Browse other sprints</Btn>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
                 {!activeSprint ? (
                   <div style={{ textAlign: "center", padding: "60px 20px", color: C.muted }}>
                     <div style={{ fontSize: 28, marginBottom: 8 }}>⚡</div>
@@ -762,7 +861,7 @@
                     <div style={{ fontSize: 10, marginBottom: 14 }}>Apply to a sprint from the feed to start.</div>
                     <Btn variant="outline" onClick={() => setScreen("feed")}>Browse sprints →</Btn>
                   </div>
-                ) : (
+                ) : (state.applicationStatus || {})[activeSprint.id] && (state.applicationStatus || {})[activeSprint.id] !== "accepted" ? null : (
                   <>
                     <div style={{ background: C.g50, borderRadius: 9, padding: 11, border: `0.5px solid ${C.border}`, marginBottom: 10 }}>
                       <div style={{ fontSize: 9, fontWeight: 700, color: C.green, marginBottom: 3, fontFamily: "monospace", textTransform: "uppercase" }}>Active Sprint · Week 2 of 3</div>
