@@ -302,8 +302,12 @@
       }],
       feedbackSent: false,
     };
-    // Backfill phone on existing localStorage (safe, only adds the missing field)
-    return { ...base, profile: { phone: "", ...(base.profile || {}) } };
+    // Backfill phone + notifications on existing localStorage (safe, additive)
+    return {
+      ...base,
+      profile: { phone: "", ...(base.profile || {}) },
+      notifications: Array.isArray(base.notifications) ? base.notifications : [],
+    };
   };
 
   // ─── Main App ───────────────────────────────────────────────────────────
@@ -322,6 +326,7 @@
     const [completionNote, setCompletionNote] = useState("");
     const [feedback, setFeedback] = useState("");
     const [editingProfile, setEditingProfile] = useState(false);
+    const [notifOpen, setNotifOpen] = useState(false);
     const [draft, setDraft] = useState(null);
     const [search, setSearch] = useState("");
     const [filter, setFilter] = useState("All");
@@ -351,6 +356,26 @@
         clearState();
         location.reload();
       }
+    }
+
+    // ── Notification helpers ──
+    const notifications = Array.isArray(state.notifications) ? state.notifications : [];
+    const unreadCount = notifications.filter((n) => !n.read).length;
+    function addNotif(type, title, body) {
+      setState((s) => ({
+        ...s,
+        notifications: [{ id: `n${Date.now()}${Math.random().toString(36).slice(2, 6)}`, type, title, body, ts: Date.now(), read: false }, ...(Array.isArray(s.notifications) ? s.notifications : [])],
+      }));
+    }
+    function markNotifsRead() {
+      setState((s) => ({ ...s, notifications: (Array.isArray(s.notifications) ? s.notifications : []).map((n) => ({ ...n, read: true })) }));
+    }
+    function relativeTime(ts) {
+      const sec = Math.floor((Date.now() - ts) / 1000);
+      if (sec < 60) return "just now";
+      if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
+      if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
+      return `${Math.floor(sec / 86400)}d ago`;
     }
 
     function selectSprint(s) { setDetailSprint(s); setScreen("detail"); }
@@ -387,6 +412,7 @@
           badges: [newBadge, ...s.badges.filter(b => b.title !== applyTarget.title)],
         };
       });
+      addNotif("accepted", `🎉 Accepted to ${applyTarget.title}`, `${applyTarget.ngo} has confirmed your spot.`);
       setCongrats(applyTarget);
       setScreen("workspace");
     }
@@ -410,6 +436,7 @@
         "Thoroughly impressed with the quality of work. Strong communication and a clear grasp of what we needed.",
       ];
       const quote = endorsements[Math.floor(Math.random() * endorsements.length)];
+      const sprintNgo = activeSprint?.ngo;
       setState((s) => ({
         ...s,
         submitted: { ...s.submitted, [s.activeSprintId]: true },
@@ -420,6 +447,7 @@
             : b
         ),
       }));
+      if (sprintTitle && sprintNgo) addNotif("endorsed", `⭐ ${sprintNgo} endorsed your work`, sprintTitle);
       setFile(null);
       setCompletionNote("");
     }
@@ -497,6 +525,33 @@
         </div>
 
         <Phone>
+          {notifOpen && (
+            <div onClick={() => { setNotifOpen(false); markNotifsRead(); }} style={{ position: "absolute", inset: 0, background: "rgba(10,31,16,0.45)", zIndex: 55, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: "50px 14px" }}>
+              <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", background: "#fff", borderRadius: 14, overflow: "hidden", boxShadow: "0 12px 32px rgba(0,0,0,0.25)" }}>
+                <div style={{ padding: "12px 14px", background: C.g900, color: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ fontSize: 13, fontWeight: 800 }}>Notifications</div>
+                  <button onClick={() => { setNotifOpen(false); markNotifsRead(); }} style={{ background: "none", border: "none", color: C.g200, fontSize: 16, cursor: "pointer", padding: 0, lineHeight: 1 }}>✕</button>
+                </div>
+                <div style={{ maxHeight: 380, overflowY: "auto" }}>
+                  {notifications.length === 0 ? (
+                    <div style={{ padding: "36px 18px", textAlign: "center", color: C.muted }}>
+                      <div style={{ fontSize: 26, marginBottom: 6 }}>🔔</div>
+                      <div style={{ fontSize: 11 }}>No notifications yet</div>
+                      <div style={{ fontSize: 10, color: C.hint, marginTop: 4, lineHeight: 1.5 }}>Apply to a sprint or submit a deliverable — updates will appear here.</div>
+                    </div>
+                  ) : notifications.map((n) => (
+                    <div key={n.id} style={{ padding: "10px 14px", borderBottom: `0.5px solid ${C.border}`, background: n.read ? "#fff" : C.g50 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 3 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: C.g900, lineHeight: 1.3 }}>{n.title}</div>
+                        <div style={{ fontSize: 9, color: C.hint, whiteSpace: "nowrap" }}>{relativeTime(n.ts)}</div>
+                      </div>
+                      {n.body && <div style={{ fontSize: 10, color: C.muted, lineHeight: 1.45 }}>{n.body}</div>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
           {congrats && (
             <div style={{ position: "absolute", inset: 0, background: "rgba(10,31,16,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 24 }}>
               <div style={{ background: "#fff", borderRadius: 20, padding: "28px 22px", textAlign: "center", width: "100%", boxShadow: "0 12px 40px rgba(0,0,0,0.3)" }}>
@@ -557,7 +612,12 @@
               <Header
                 title={`Good morning${profile.name ? ", " + profile.name.split(" ")[0] : ""} 👋`}
                 sub="Discover Sprints"
-                right={<button onClick={() => setScreen("profile")} style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}><Avatar photo={profile.photo} name={profile.name} size={28} /></button>}
+                right={
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <NotifBell count={unreadCount} onClick={() => setNotifOpen(true)} />
+                    <button onClick={() => setScreen("profile")} style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}><Avatar photo={profile.photo} name={profile.name} size={28} /></button>
+                  </div>
+                }
               />
               <Scroll style={{ padding: 12 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 11px", borderRadius: 10, border: `1px solid ${search ? C.green : C.border}`, marginBottom: 10, background: "#fff" }}>
@@ -693,7 +753,7 @@
           {/* ─── WORKSPACE ─── */}
           {screen === "workspace" && (
             <>
-              <Header title="Workspace" sub={activeSprint ? activeSprint.title : "No active sprint"} onBack={() => setScreen("feed")} />
+              <Header title="Workspace" sub={activeSprint ? activeSprint.title : "No active sprint"} onBack={() => setScreen("feed")} right={<NotifBell count={unreadCount} onClick={() => setNotifOpen(true)} />} />
               <Scroll style={{ padding: 12 }}>
                 {!activeSprint ? (
                   <div style={{ textAlign: "center", padding: "60px 20px", color: C.muted }}>
@@ -754,9 +814,12 @@
                 <Header
                   title="My Portfolio"
                   right={
-                    <button onClick={() => exportPortfolio(profile, state.badges)} style={{ background: C.gold, border: "none", color: C.g900, fontSize: 10, fontWeight: 800, padding: "5px 11px", borderRadius: 14, cursor: "pointer" }}>
-                      📄 Export
-                    </button>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <NotifBell count={unreadCount} onClick={() => setNotifOpen(true)} />
+                      <button onClick={() => exportPortfolio(profile, state.badges)} style={{ background: C.gold, border: "none", color: C.g900, fontSize: 10, fontWeight: 800, padding: "5px 11px", borderRadius: 14, cursor: "pointer" }}>
+                        📄 Export
+                      </button>
+                    </div>
                   }
                 />
                 <Scroll style={{ padding: 0 }}>
@@ -861,9 +924,13 @@
             <>
               <Header
                 title="My Profile"
-                right={editingProfile
-                  ? <button onClick={saveEdit} style={{ background: C.green, color: "#fff", border: "none", borderRadius: 16, padding: "5px 14px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Save</button>
-                  : <button onClick={startEdit} style={{ background: "none", color: C.g200, border: `1px solid ${C.g200}`, borderRadius: 16, padding: "5px 14px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Edit</button>}
+                right={
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    {!editingProfile && <NotifBell count={unreadCount} onClick={() => setNotifOpen(true)} />}
+                    {editingProfile
+                      ? <button onClick={saveEdit} style={{ background: C.green, color: "#fff", border: "none", borderRadius: 16, padding: "5px 14px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Save</button>
+                      : <button onClick={startEdit} style={{ background: "none", color: C.g200, border: `1px solid ${C.g200}`, borderRadius: 16, padding: "5px 14px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Edit</button>}
+                  </div>}
               />
               <Scroll style={{ padding: 16 }}>
                 {(() => {
@@ -1186,6 +1253,19 @@ ${badges.length === 0 ? `
     w.document.open();
     w.document.write(html);
     w.document.close();
+  }
+
+  function NotifBell({ count, onClick }) {
+    return (
+      <button onClick={onClick} style={{ background: "none", border: `1px solid ${C.g200}`, borderRadius: "50%", width: 28, height: 28, padding: 0, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
+        <span style={{ fontSize: 13, lineHeight: 1 }}>🔔</span>
+        {count > 0 && (
+          <span style={{ position: "absolute", top: -3, right: -3, background: C.red, color: "#fff", fontSize: 8, fontWeight: 800, padding: "1px 4px", borderRadius: 8, minWidth: 13, height: 13, display: "flex", alignItems: "center", justifyContent: "center", border: "1.5px solid #fff" }}>
+            {count > 9 ? "9+" : count}
+          </span>
+        )}
+      </button>
+    );
   }
 
   ReactDOM.createRoot(document.getElementById("root")).render(<App />);
