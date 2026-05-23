@@ -1,0 +1,860 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>ImpactSprint — NYSC Corps Member Platform</title>
+  <meta name="description" content="ImpactSprint matches NYSC corps members with short, high-impact sprints from verified NGOs." />
+  <meta property="og:title" content="ImpactSprint" />
+  <meta property="og:description" content="NYSC corps members + verified NGOs. Short sprints. Real impact." />
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%;background:#F5FBF7}
+    body{font-family:system-ui,-apple-system,sans-serif;color:#0A1F10;-webkit-font-smoothing:antialiased}
+    input,textarea,button,select{font-family:inherit}
+    input,textarea{font-size:16px}
+    @media(min-width:480px){input,textarea{font-size:13px}}
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel" data-presets="react">
+  const { useState, useEffect, useRef } = React;
+
+  // ─── Design tokens ───────────────────────────────────────────────────────
+  const C = {
+    g900: "#0A1F10", g700: "#1A5C35", green: "#1A8C4E", g200: "#A8DFBF", g50: "#EBF7F1",
+    gold: "#F5C842", goldDark: "#7A4F10", goldBg: "#FDF6E3", goldBorder: "#C9962A",
+    red: "#B83228", redBg: "#FEF0EE", redBorder: "#F0A090",
+    border: "#D4EDE0", surface: "#F5FBF7", text: "#0A1F10", muted: "#4A6B56", hint: "#8AAD96",
+  };
+
+  // ─── Persistence ─────────────────────────────────────────────────────────
+  const KEY = "impactsprint:v2";
+  const loadState = () => { try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch { return null; } };
+  const saveState = (s) => { try { localStorage.setItem(KEY, JSON.stringify(s)); } catch {} };
+  const clearState = () => localStorage.removeItem(KEY);
+
+  // ─── Reusable components ────────────────────────────────────────────────
+  const Logo = ({ size = 32 }) => (
+    <svg width={size} height={size} viewBox="0 0 64 64" style={{ display: "block", flexShrink: 0 }}>
+      <defs><clipPath id={`lc${size}`}><rect width="64" height="64" rx={size * 0.25} /></clipPath></defs>
+      <g clipPath={`url(#lc${size})`}>
+        <rect width="64" height="64" fill={C.green} />
+        <rect width="32" height="64" fill={C.g700} />
+        <polygon points="12,16 36,32 12,48" fill="#fff" />
+        <polygon points="26,16 50,32 26,48" fill={C.g200} opacity="0.7" />
+      </g>
+    </svg>
+  );
+
+  const Wordmark = ({ size = 20, light }) => (
+    <span style={{ fontSize: size, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1 }}>
+      <span style={{ color: light ? "#fff" : C.g900 }}>Impact</span>
+      <span style={{ color: C.green }}>Sprint</span>
+    </span>
+  );
+
+  const Avatar = ({ photo, name, size }) => (
+    photo
+      ? <img src={photo} alt="" style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
+      : <div style={{ width: size, height: size, borderRadius: "50%", background: C.green, display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.38, fontWeight: 800, color: "#fff", flexShrink: 0 }}>
+          {(name || "?")[0].toUpperCase()}
+        </div>
+  );
+
+  const NavBar = ({ active, onNav }) => {
+    const items = [["feed", "Discover", "🔍"], ["workspace", "Sprints", "⚡"], ["portfolio", "Portfolio", "📄"], ["profile", "Profile", "👤"]];
+    return (
+      <div style={{ display: "flex", justifyContent: "space-around", padding: "9px 0 12px", borderTop: `0.5px solid ${C.border}`, background: "#fff", flexShrink: 0 }}>
+        {items.map(([id, label, icon]) => {
+          const on = id === active;
+          return (
+            <button key={id} onClick={() => onNav(id)} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+              <span style={{ fontSize: 18, filter: on ? "none" : "grayscale(1) opacity(0.5)" }}>{icon}</span>
+              <span style={{ fontSize: 9, color: on ? C.green : C.hint, fontWeight: on ? 700 : 400 }}>{label}</span>
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const Phone = ({ children }) => (
+    <div style={{ position: "relative", width: "100%", maxWidth: 380, background: "#fff", borderRadius: 28, border: "2px solid #C8D4C4", overflow: "hidden", boxShadow: "0 8px 32px rgba(10,31,16,0.12)", display: "flex", flexDirection: "column", height: "min(720px, calc(100vh - 80px))" }}>
+      <div style={{ background: C.g900, height: 14, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <div style={{ width: 44, height: 4, background: C.g200, borderRadius: 3 }} />
+      </div>
+      {children}
+    </div>
+  );
+
+  const Btn = ({ children, onClick, variant = "primary", disabled, style }) => {
+    const v = {
+      primary: { background: disabled ? C.surface : C.green, color: disabled ? C.hint : "#fff", border: "none" },
+      outline: { background: "transparent", color: C.green, border: `1.5px solid ${C.green}` },
+      gold: { background: C.g900, color: C.gold, border: "none" },
+      ghost: { background: "transparent", color: C.muted, border: "none" },
+      danger: { background: C.redBg, color: C.red, border: `1px solid ${C.redBorder}` },
+    }[variant];
+    return (
+      <button onClick={disabled ? undefined : onClick} disabled={disabled}
+        style={{ width: "100%", padding: "12px 18px", borderRadius: 26, fontSize: 13, fontWeight: 700, cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.6 : 1, ...v, ...style }}>
+        {children}
+      </button>
+    );
+  };
+
+  const Header = ({ title, sub, right, onBack }) => (
+    <div style={{ background: C.g900, padding: "12px 16px 10px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+        {onBack && <button onClick={onBack} style={{ background: "none", border: "none", color: "#fff", fontSize: 18, cursor: "pointer", padding: "0 4px 0 0", lineHeight: 1 }}>←</button>}
+        <div style={{ minWidth: 0 }}>
+          <div style={{ color: "#fff", fontSize: 14, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</div>
+          {sub && <div style={{ color: C.g200, fontSize: 10, marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</div>}
+        </div>
+      </div>
+      {right}
+    </div>
+  );
+
+  const Scroll = ({ children, style }) => (
+    <div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", ...style }}>{children}</div>
+  );
+
+  const MatchBar = ({ pct, label, level }) => {
+    const col = { high: C.green, med: C.goldBorder, low: C.red }[level];
+    const txt = { high: C.green, med: C.goldDark, low: C.red }[level];
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ flex: 1, height: 6, background: C.g200, borderRadius: 3, overflow: "hidden" }}>
+          <div style={{ width: `${pct}%`, height: "100%", background: col, borderRadius: 3 }} />
+        </div>
+        <span style={{ fontSize: 11, fontWeight: 700, color: txt, whiteSpace: "nowrap" }}>{label}</span>
+      </div>
+    );
+  };
+
+  const Tag = ({ children, multi }) => (
+    <span style={{ fontSize: 10, padding: "3px 9px", borderRadius: 18, border: `0.5px solid ${multi ? C.goldBorder : C.border}`, color: multi ? C.goldDark : C.muted, background: multi ? C.goldBg : C.surface }}>{children}</span>
+  );
+
+  const Field = ({ label, value, onChange, placeholder, valid, error, hint, type = "text" }) => (
+    <div style={{ marginBottom: 12 }}>
+      <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 4 }}>{label}</label>
+      <input type={type} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
+        style={{ width: "100%", padding: "10px 13px", borderRadius: 10, outline: "none", boxSizing: "border-box",
+          border: `1px solid ${error ? C.red : valid ? C.green : C.border}` }} />
+      {error && <div style={{ fontSize: 10, color: C.red, marginTop: 3 }}>⚠ {error}</div>}
+      {!error && valid && hint && <div style={{ fontSize: 10, color: C.green, marginTop: 3 }}>✓ {hint}</div>}
+    </div>
+  );
+
+  // ─── Data ───────────────────────────────────────────────────────────────
+  const SPRINTS = [
+    {
+      id: 1, ngo: "Civic Aid Foundation", loc: "Lagos State",
+      title: "Legal Policy Review & Social Media Campaign",
+      tags: ["Legal Aid", "Research"], multi: true, dur: "2–4 Weeks", hrs: 8,
+      match: 88, mLabel: "High match", mLevel: "high", sector: "Legal",
+      about: "Civic Aid Foundation provides free legal aid to low-income communities across Lagos State. NGO-verified · CAC registered.",
+      scope: "Review three community legal aid policies for clarity and accessibility, then design a short social media campaign to communicate tenant-rights information to the public.",
+      tasks: [
+        "Read and annotate 3 existing community legal aid policy documents",
+        "Flag unclear or outdated clauses with suggested rewrites",
+        "Draft 5 plain-language social media posts on tenant rights",
+        "Compile findings into one annotated policy document (PDF)",
+      ],
+      deliverable: "Annotated policy document (PDF) + 5 social media post drafts",
+    },
+    {
+      id: 2, ngo: "EduReach Nigeria", loc: "Abuja FCT",
+      title: "Community Legal Aid Documentation",
+      tags: ["Legal Writing"], multi: false, dur: "1–2 Weeks", hrs: 6,
+      match: 52, mLabel: "Medium match", mLevel: "med", sector: "Legal",
+      about: "EduReach Nigeria runs education and legal-literacy programmes for rural communities. NGO-verified · CAC registered.",
+      scope: "Document and organise community legal aid case notes into a clear, searchable reference format for field officers.",
+      tasks: [
+        "Collect and review existing case note records",
+        "Standardise notes into a consistent template",
+        "Write a 1-page summary index for field officers",
+      ],
+      deliverable: "Organised case-note reference document (PDF)",
+    },
+    {
+      id: 3, ngo: "HealthBridge NG", loc: "Kano State",
+      title: "Health Outreach Data Entry & Analysis",
+      tags: ["Data Analysis"], multi: false, dur: "2–3 Weeks", hrs: 10,
+      match: 22, mLabel: "Low match", mLevel: "low", sector: "Health",
+      about: "HealthBridge NG delivers mobile health outreach to underserved communities across northern Nigeria. NGO-verified · CAC registered.",
+      scope: "Enter health outreach survey data and produce a simple summary of key findings for the programme team.",
+      tasks: [
+        "Enter 200+ paper survey responses into a spreadsheet",
+        "Clean and check the data for errors",
+        "Produce a 1-page summary of key health indicators",
+      ],
+      deliverable: "Clean dataset (spreadsheet) + 1-page findings summary",
+    },
+    {
+      id: 4, ngo: "WomenLead Africa", loc: "Enugu State",
+      title: "Financial Literacy Campaign for Rural Women",
+      tags: ["Design", "Social Media", "Communications"], multi: true, dur: "2–3 Weeks", hrs: 7,
+      match: 72, mLabel: "High match", mLevel: "high", sector: "Education",
+      about: "WomenLead Africa supports women-led businesses with financial literacy programmes across south-east Nigeria. NGO-verified · CAC registered.",
+      scope: "Design a visual financial literacy campaign and produce social media content to help rural women understand basic banking and savings.",
+      tasks: [
+        "Design 6 infographic-style visuals on savings & loans",
+        "Write captions in Igbo and English",
+        "Schedule a 2-week social media rollout",
+      ],
+      deliverable: "Visual campaign kit (6 infographics + 14 captions)",
+    },
+    {
+      id: 5, ngo: "GreenStart NG", loc: "Port Harcourt",
+      title: "Community Health Education Curriculum",
+      tags: ["Public Health", "Education"], multi: true, dur: "3–4 Weeks", hrs: 9,
+      match: 45, mLabel: "Medium match", mLevel: "med", sector: "Health",
+      about: "GreenStart NG runs community health awareness programmes across the Niger Delta. NGO-verified · CAC registered.",
+      scope: "Develop a community health education curriculum focused on malaria prevention and maternal health for delivery to 5 rural communities.",
+      tasks: [
+        "Research existing community health education resources",
+        "Design a 4-session curriculum with handouts",
+        "Create facilitator guide for community health workers",
+      ],
+      deliverable: "Curriculum guide (PDF) + 4 session handouts + facilitator notes",
+    },
+  ];
+
+  const ALL_SKILLS = ["Legal Aid", "Research", "Legal Writing", "Data Analysis", "Design", "Social Media", "Public Health", "Education", "Project Management", "Communications"];
+
+  const FILE_TYPES = [
+    { ext: "PDF", accept: ".pdf", icon: "📕" },
+    { ext: "Word", accept: ".doc,.docx", icon: "📘" },
+    { ext: "Spreadsheet", accept: ".xls,.xlsx,.csv", icon: "📗" },
+    { ext: "Slides", accept: ".ppt,.pptx", icon: "📙" },
+    { ext: "Image", accept: "image/*", icon: "🖼" },
+    { ext: "Zip", accept: ".zip", icon: "🗜" },
+  ];
+
+  const fmtSize = (b) => b < 1024 ? b + " B" : b < 1048576 ? (b / 1024).toFixed(1) + " KB" : (b / 1048576).toFixed(1) + " MB";
+
+  // ─── NYSC state codes (all 36 states + FCT) ─────────────────────────────
+  const NYSC_STATES = {
+    AB: "Abia", AD: "Adamawa", AK: "Akwa Ibom", AN: "Anambra", BA: "Bauchi",
+    BY: "Bayelsa", BE: "Benue", BO: "Borno", CR: "Cross River", DE: "Delta",
+    EB: "Ebonyi", ED: "Edo", EK: "Ekiti", EN: "Enugu", FC: "FCT",
+    GO: "Gombe", IM: "Imo", JI: "Jigawa", KD: "Kaduna", KN: "Kano",
+    KT: "Katsina", KE: "Kebbi", KO: "Kogi", KW: "Kwara", LA: "Lagos",
+    NA: "Nasarawa", NI: "Niger", OG: "Ogun", ON: "Ondo", OS: "Osun",
+    OY: "Oyo", PL: "Plateau", RI: "Rivers", SO: "Sokoto", TA: "Taraba",
+    YO: "Yobe", ZA: "Zamfara",
+  };
+
+  function validateStateCode(code) {
+    const upper = (code || "").toUpperCase();
+    if (!upper) return { valid: false, error: "" };
+    const m = upper.match(/^([A-Z]{2})\/(\d{2})([A-Z])\/(\d{3,4})$/);
+    if (!m) return { valid: false, error: "Format: e.g. LA/23A/1234" };
+    const state = NYSC_STATES[m[1]];
+    if (!state) return { valid: false, error: `"${m[1]}" is not a valid NYSC state code` };
+    return { valid: true, state };
+  }
+
+  // ─── Initial state ──────────────────────────────────────────────────────
+  const blankProfile = { name: "", email: "", stateCode: "", discipline: "", bio: "", skills: [], hours: 6, photo: null };
+  const initialState = () => loadState() || {
+    profile: blankProfile,
+    applied: [],
+    activeSprintId: null,
+    messages: { /* sprintId: [...] */ },
+    submitted: {},   // sprintId: true
+    deliverables: {},// sprintId: {name, size}
+    badges: [{ ngo: "EduReach Nigeria", title: "Social Media Campaign Design", tags: ["Design", "Social Media"], status: "endorsed" }],
+    feedbackSent: false,
+  };
+
+  // ─── Main App ───────────────────────────────────────────────────────────
+  function App() {
+    const [state, setState] = useState(initialState);
+    const [screen, setScreen] = useState(() => {
+      const s = loadState();
+      return s?.profile?.discipline ? "feed" : "onboarding";
+    });
+    const [detailSprint, setDetailSprint] = useState(null);
+    const [applyTarget, setApplyTarget] = useState(null);
+    const [congrats, setCongrats] = useState(null);
+    const [motivation, setMotivation] = useState("");
+    const [file, setFile] = useState(null);
+    const [pickedType, setPickedType] = useState(FILE_TYPES[0]);
+    const [completionNote, setCompletionNote] = useState("");
+    const [feedback, setFeedback] = useState("");
+    const [editingProfile, setEditingProfile] = useState(false);
+    const [draft, setDraft] = useState(null);
+    const [search, setSearch] = useState("");
+    const [filter, setFilter] = useState("All");
+    const [verifying, setVerifying] = useState(false);
+    const [verified, setVerified] = useState(false);
+
+    // Persist on every change
+    useEffect(() => { saveState(state); }, [state]);
+
+    const update = (patch) => setState((s) => ({ ...s, ...patch }));
+    const updateProfile = (patch) => setState((s) => ({ ...s, profile: { ...s.profile, ...patch } }));
+
+    const profile = state.profile;
+    const activeSprint = state.activeSprintId ? SPRINTS.find(s => s.id === state.activeSprintId) : null;
+    const activeMessages = state.activeSprintId ? (state.messages[state.activeSprintId] || []) : [];
+    const isSubmitted = state.activeSprintId ? !!state.submitted[state.activeSprintId] : false;
+    const activeDeliverable = state.activeSprintId ? state.deliverables[state.activeSprintId] : null;
+
+    const emailValid = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(profile.email);
+    const stateCheck = validateStateCode(profile.stateCode);
+    const stateCodeValid = stateCheck.valid;
+    const onboardReady = profile.name && emailValid && stateCodeValid && profile.discipline;
+    const stepsDone = [profile.name, emailValid, stateCodeValid, profile.discipline].filter(Boolean).length;
+
+    function resetDemo() {
+      if (confirm("Reset the demo? Your test session will be cleared.")) {
+        clearState();
+        location.reload();
+      }
+    }
+
+    function selectSprint(s) { setDetailSprint(s); setScreen("detail"); }
+    function openApply(s) { setApplyTarget(s); setMotivation(""); setScreen("apply"); }
+
+    function confirmApply() {
+      if (!applyTarget) return;
+      setState((s) => {
+        if (s.applied.includes(applyTarget.id)) return s;
+        const messages = { ...s.messages };
+        messages[applyTarget.id] = [{ from: "ngo", text: "Hi, please focus on the tenant rights section first 🙏" }];
+        const newBadge = { ngo: applyTarget.ngo, title: applyTarget.title, tags: applyTarget.tags, status: "awaiting" };
+        return {
+          ...s,
+          applied: [...s.applied, applyTarget.id],
+          activeSprintId: applyTarget.id,
+          messages,
+          badges: [newBadge, ...s.badges.filter(b => b.title !== applyTarget.title)],
+        };
+      });
+      setCongrats(applyTarget);
+      setScreen("workspace");
+    }
+
+    function sendUpdate() {
+      setState((s) => {
+        const msgs = (s.messages[s.activeSprintId] || []).concat([
+          { from: "cm", text: "Noted! I've completed the first draft — sharing now." },
+          { from: "ngo", text: "Excellent work, this is exactly what we needed." },
+        ]);
+        return { ...s, messages: { ...s.messages, [s.activeSprintId]: msgs } };
+      });
+    }
+
+    function submitDeliverable() {
+      if (!file) return;
+      setState((s) => ({
+        ...s,
+        submitted: { ...s.submitted, [s.activeSprintId]: true },
+        deliverables: { ...s.deliverables, [s.activeSprintId]: { name: file.name, size: file.size, type: pickedType.ext, note: completionNote } },
+      }));
+      setFile(null);
+      setCompletionNote("");
+    }
+
+    function handlePhoto(e, target) {
+      const f = e.target.files?.[0];
+      if (!f) return;
+      const r = new FileReader();
+      r.onload = () => {
+        if (target === "draft") setDraft((d) => ({ ...d, photo: r.result }));
+        else updateProfile({ photo: r.result });
+      };
+      r.readAsDataURL(f);
+    }
+
+    const matchFor = (s) => {
+      const overlap = s.tags.filter(t => profile.skills.includes(t)).length;
+      const dynamicMatch = s.tags.length ? Math.round((overlap / s.tags.length) * 100) : s.match;
+      const m = profile.skills.length ? dynamicMatch : s.match;
+      const level = m >= 70 ? "high" : m >= 40 ? "med" : "low";
+      return { match: m, mLevel: level, mLabel: { high: "High match", med: "Medium match", low: "Low match" }[level] };
+    };
+
+    const visibleSprints = SPRINTS.map(s => ({ ...s, ...matchFor(s) })).filter((s) => {
+      const matchesFilter = filter === "All" || s.sector === filter || s.loc.includes(filter);
+      const q = search.trim().toLowerCase();
+      return matchesFilter && (!q ||
+        s.title.toLowerCase().includes(q) || s.ngo.toLowerCase().includes(q) ||
+        s.tags.some((t) => t.toLowerCase().includes(q)) || s.sector.toLowerCase().includes(q));
+    });
+
+    const startEdit = () => { setDraft({ ...profile }); setEditingProfile(true); };
+    const saveEdit = () => { updateProfile(draft); setEditingProfile(false); };
+    const toggleDraftSkill = (s) =>
+      setDraft((d) => ({ ...d, skills: d.skills.includes(s) ? d.skills.filter((x) => x !== s) : [...d.skills, s] }));
+
+    function startVerification() {
+      setVerifying(true);
+      setTimeout(() => {
+        setVerifying(false);
+        setVerified(true);
+        setTimeout(() => setScreen("feed"), 1200);
+      }, 1500);
+    }
+
+    // ─── Rendering ───────────────────────────────────────────────────────
+    return (
+      <div style={{ minHeight: "100vh", background: C.surface, display: "flex", flexDirection: "column", alignItems: "center", padding: "20px 12px 28px", gap: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Logo size={24} /><Wordmark size={16} />
+        </div>
+
+        <Phone>
+          {congrats && (
+            <div style={{ position: "absolute", inset: 0, background: "rgba(10,31,16,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 24 }}>
+              <div style={{ background: "#fff", borderRadius: 20, padding: "28px 22px", textAlign: "center", width: "100%", boxShadow: "0 12px 40px rgba(0,0,0,0.3)" }}>
+                <div style={{ width: 64, height: 64, borderRadius: "50%", background: C.g50, border: `2px solid ${C.g200}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32, margin: "0 auto 14px" }}>🎉</div>
+                <div style={{ fontSize: 19, fontWeight: 800, color: C.g900, marginBottom: 6 }}>You're accepted!</div>
+                <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.6, marginBottom: 6 }}>
+                  Congratulations{profile.name ? ", " + profile.name.split(" ")[0] : ""}! {congrats.ngo} has accepted you for
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.green, marginBottom: 16, lineHeight: 1.3 }}>{congrats.title}</div>
+                <Btn onClick={() => setCongrats(null)}>Open my workspace →</Btn>
+              </div>
+            </div>
+          )}
+
+          {/* ─── ONBOARDING ─── */}
+          {screen === "onboarding" && (
+            <>
+              <Header title="Build your profile" />
+              <Scroll style={{ padding: 16 }}>
+                <div style={{ height: 4, background: C.g50, borderRadius: 2, overflow: "hidden", marginBottom: 16 }}>
+                  <div style={{ width: `${(stepsDone / 4) * 100}%`, height: "100%", background: C.green, borderRadius: 2, transition: "width .3s" }} />
+                </div>
+                <Field label="Full Name" value={profile.name} onChange={(v) => updateProfile({ name: v })} placeholder="e.g. Adedeji Aishat" valid={!!profile.name} hint="Looks good" />
+                <Field label="Email Address" type="email" value={profile.email} onChange={(v) => updateProfile({ email: v })} placeholder="you@example.com" valid={emailValid} error={profile.email && !emailValid ? "Enter a valid email" : ""} hint="Email format valid" />
+                <Field label="NYSC State Code" value={profile.stateCode} onChange={(v) => updateProfile({ stateCode: v.toUpperCase() })} placeholder="e.g. LA/23A/1234 · KN/24B/0567 · FC/22C/0089" valid={stateCodeValid} error={stateCheck.error} hint={stateCheck.valid ? `${stateCheck.state} State` : ""} />
+                <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 6 }}>Your Discipline</label>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16 }}>
+                  {["Law", "Engineering", "Health", "Finance", "Arts", "Sciences"].map((d) => {
+                    const on = profile.discipline === d;
+                    return (
+                      <div key={d} onClick={() => updateProfile({ discipline: d })} style={{ padding: "7px 14px", borderRadius: 18, cursor: "pointer", fontSize: 12, fontWeight: on ? 700 : 400, background: on ? C.g50 : "#fff", border: `1px solid ${on ? C.green : C.border}`, color: on ? C.green : C.muted }}>
+                        {d}
+                      </div>
+                    );
+                  })}
+                </div>
+                {verified ? (
+                  <div style={{ background: C.g50, border: `1px solid ${C.g200}`, borderRadius: 26, padding: "12px 18px", fontSize: 13, fontWeight: 700, color: C.green, textAlign: "center" }}>
+                    ✓ Verified · Welcome{profile.name ? ", " + profile.name.split(" ")[0] : ""}!
+                  </div>
+                ) : verifying ? (
+                  <Btn disabled>Verifying with NYSC…</Btn>
+                ) : onboardReady ? (
+                  <Btn onClick={startVerification}>✉ Verify with NYSC & continue →</Btn>
+                ) : (
+                  <Btn disabled>Complete all fields to continue</Btn>
+                )}
+                <div style={{ fontSize: 10, color: C.hint, textAlign: "center", marginTop: 8, lineHeight: 1.5 }}>
+                  {verified ? "Taking you to your sprint feed…" : verifying ? "Confirming your posting with NYSC records…" : "In production, NYSC verification confirms with your state inspector in 24–48 hours. Demo verification is instant."}
+                </div>
+              </Scroll>
+            </>
+          )}
+
+          {/* ─── FEED ─── */}
+          {screen === "feed" && (
+            <>
+              <Header
+                title={`Good morning${profile.name ? ", " + profile.name.split(" ")[0] : ""} 👋`}
+                sub="Discover Sprints"
+                right={<button onClick={() => setScreen("profile")} style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}><Avatar photo={profile.photo} name={profile.name} size={28} /></button>}
+              />
+              <Scroll style={{ padding: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 11px", borderRadius: 10, border: `1px solid ${search ? C.green : C.border}`, marginBottom: 10, background: "#fff" }}>
+                  <span style={{ fontSize: 12 }}>🔍</span>
+                  <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search NGOs, skills or sectors…"
+                    style={{ border: "none", outline: "none", flex: 1, background: "transparent" }} />
+                  {search && <button onClick={() => setSearch("")} style={{ border: "none", background: "none", color: C.hint, fontSize: 14, cursor: "pointer", padding: 0 }}>✕</button>}
+                </div>
+                <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+                  {["All", "Lagos", "Abuja", "Kano", "Legal", "Health", "Education"].map((f) => (
+                    <button key={f} onClick={() => setFilter(f)}
+                      style={{ padding: "4px 11px", borderRadius: 16, fontSize: 10, fontWeight: filter === f ? 700 : 500, cursor: "pointer", background: filter === f ? C.g50 : C.surface, color: filter === f ? C.green : C.muted, border: `0.5px solid ${filter === f ? C.green : C.border}` }}>{f}</button>
+                  ))}
+                </div>
+                {visibleSprints.length === 0 && (
+                  <div style={{ textAlign: "center", padding: "40px 0", color: C.muted }}>
+                    <div style={{ fontSize: 28, marginBottom: 8 }}>🌱</div>
+                    <div style={{ fontSize: 12, fontWeight: 600 }}>No sprints match your search</div>
+                    <button onClick={() => { setSearch(""); setFilter("All"); }} style={{ marginTop: 8, padding: "5px 14px", borderRadius: 14, border: `0.5px solid ${C.green}`, background: "#fff", color: C.green, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>Clear search</button>
+                  </div>
+                )}
+                {visibleSprints.map((s) => {
+                  const applied = state.applied.includes(s.id);
+                  return (
+                    <div key={s.id} onClick={() => selectSprint(s)}
+                      style={{ background: "#fff", borderRadius: 14, border: `0.5px solid ${C.border}`, overflow: "hidden", marginBottom: 10, cursor: "pointer" }}>
+                      <div style={{ background: C.g50, padding: "12px 14px 10px", borderBottom: `0.5px solid ${C.border}` }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, color: C.muted, marginBottom: 5 }}>
+                          <span style={{ width: 5, height: 5, borderRadius: "50%", background: applied ? C.goldBorder : C.green }} />
+                          {s.ngo} · {s.loc}
+                          {applied && <span style={{ background: C.goldBg, color: C.goldDark, fontSize: 8, fontWeight: 700, padding: "1px 6px", borderRadius: 6, border: `0.5px solid ${C.goldBorder}` }}>Applied</span>}
+                        </div>
+                        <div style={{ fontSize: 15, fontWeight: 800, color: C.g900, lineHeight: 1.2, marginBottom: 8 }}>{s.title}</div>
+                        <MatchBar pct={s.match} label={s.mLabel} level={s.mLevel} />
+                      </div>
+                      <div style={{ padding: "9px 14px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                        <div>
+                          <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                            {s.tags.map((t) => <Tag key={t}>{t}</Tag>)}{s.multi && <Tag multi>⚡ Multi-field</Tag>}
+                          </div>
+                          <div style={{ fontSize: 9, color: C.hint, marginTop: 4 }}>{s.dur} · {s.hrs} hrs/wk</div>
+                        </div>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: C.green, whiteSpace: "nowrap" }}>View →</span>
+                      </div>
+                    </div>
+                  );
+                })}
+                <div style={{ height: 16 }} />
+              </Scroll>
+              <NavBar active="feed" onNav={setScreen} />
+            </>
+          )}
+
+          {/* ─── DETAIL ─── */}
+          {screen === "detail" && detailSprint && (() => {
+            const m = matchFor(detailSprint);
+            const applied = state.applied.includes(detailSprint.id);
+            return (
+              <>
+                <Header title="Sprint details" sub={detailSprint.ngo} onBack={() => setScreen("feed")} />
+                <Scroll style={{ padding: 16 }}>
+                  <div style={{ fontSize: 17, fontWeight: 800, color: C.g900, lineHeight: 1.25, marginBottom: 8 }}>{detailSprint.title}</div>
+                  <div style={{ marginBottom: 12 }}><MatchBar pct={m.match} label={m.mLabel} level={m.mLevel} /></div>
+                  <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 14 }}>
+                    {detailSprint.tags.map((t) => <Tag key={t}>{t}</Tag>)}
+                    {detailSprint.multi && <Tag multi>⚡ Multi-field</Tag>}
+                  </div>
+                  <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+                    {[["⏱", detailSprint.dur, "Duration"], ["📅", `${detailSprint.hrs} hrs/wk`, "Commitment"], ["📍", detailSprint.loc, "Location"]].map(([ic, v, l]) => (
+                      <div key={l} style={{ flex: 1, background: C.g50, borderRadius: 9, padding: "9px 6px", textAlign: "center", border: `0.5px solid ${C.border}` }}>
+                        <div style={{ fontSize: 14 }}>{ic}</div>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: C.g900, marginTop: 2 }}>{v}</div>
+                        <div style={{ fontSize: 8, color: C.muted }}>{l}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <Lbl>Scope</Lbl>
+                  <p style={{ fontSize: 12, lineHeight: 1.6, marginBottom: 14 }}>{detailSprint.scope}</p>
+                  <Lbl>Tasks</Lbl>
+                  <div style={{ marginBottom: 14 }}>
+                    {detailSprint.tasks.map((t, i) => (
+                      <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 6 }}>
+                        <div style={{ width: 16, height: 16, borderRadius: 5, background: C.g50, border: `1px solid ${C.g200}`, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 800, color: C.green, marginTop: 1 }}>{i + 1}</div>
+                        <div style={{ fontSize: 11, lineHeight: 1.5 }}>{t}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ background: C.g50, borderRadius: 9, padding: 11, border: `0.5px solid ${C.g200}`, marginBottom: 14 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: C.green, textTransform: "uppercase", marginBottom: 3 }}>Deliverable</div>
+                    <div style={{ fontSize: 11, lineHeight: 1.5 }}>{detailSprint.deliverable}</div>
+                  </div>
+                  <Lbl>About the NGO</Lbl>
+                  <p style={{ fontSize: 11, color: C.muted, lineHeight: 1.6, marginBottom: 16 }}>{detailSprint.about}</p>
+                  {applied
+                    ? <Btn variant="outline" onClick={() => { update({ activeSprintId: detailSprint.id }); setScreen("workspace"); }}>Applied ✓ — open workspace</Btn>
+                    : <Btn onClick={() => openApply(detailSprint)}>Apply to this sprint →</Btn>}
+                  <div style={{ height: 16 }} />
+                </Scroll>
+              </>
+            );
+          })()}
+
+          {/* ─── APPLY ─── */}
+          {screen === "apply" && applyTarget && (() => {
+            const m = matchFor(applyTarget);
+            const wordCount = motivation.trim() ? motivation.trim().split(/\s+/).length : 0;
+            return (
+              <>
+                <Header title="Apply to sprint" sub={applyTarget.ngo} onBack={() => setScreen("detail")} />
+                <Scroll style={{ padding: 16 }}>
+                  <div style={{ background: C.g50, borderRadius: 10, padding: 12, border: `0.5px solid ${C.border}`, marginBottom: 14 }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: C.g900, marginBottom: 8 }}>{applyTarget.title}</div>
+                    <MatchBar pct={m.match} label={m.mLabel} level={m.mLevel} />
+                  </div>
+                  {m.mLevel === "low" && (
+                    <div style={{ background: C.goldBg, border: `0.5px solid ${C.goldBorder}`, borderRadius: 8, padding: "8px 10px", fontSize: 10, color: C.goldDark, marginBottom: 14 }}>
+                      ⚡ Low skill match — a strong motivation note matters more here.
+                    </div>
+                  )}
+                  <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 4 }}>Motivation note</label>
+                  <textarea value={motivation} onChange={(e) => setMotivation(e.target.value.slice(0, 600))} placeholder="Why do you want this sprint? What relevant experience do you bring?"
+                    style={{ width: "100%", height: 130, borderRadius: 10, border: `1px solid ${motivation ? C.green : C.border}`, padding: "10px 12px", resize: "none", outline: "none", boxSizing: "border-box" }} />
+                  <div style={{ fontSize: 10, color: C.hint, textAlign: "right", marginTop: 3, marginBottom: 16 }}>{wordCount} / 150 words</div>
+                  <Btn disabled={!motivation.trim()} onClick={confirmApply}>
+                    {motivation.trim() ? "Submit application →" : "Write a motivation note to apply"}
+                  </Btn>
+                  <div style={{ fontSize: 10, color: C.hint, textAlign: "center", marginTop: 8 }}>The NGO Lead is notified and confirms within 48 hours.</div>
+                </Scroll>
+              </>
+            );
+          })()}
+
+          {/* ─── WORKSPACE ─── */}
+          {screen === "workspace" && (
+            <>
+              <Header title="Workspace" sub={activeSprint ? activeSprint.title : "No active sprint"} onBack={() => setScreen("feed")} />
+              <Scroll style={{ padding: 12 }}>
+                {!activeSprint ? (
+                  <div style={{ textAlign: "center", padding: "60px 20px", color: C.muted }}>
+                    <div style={{ fontSize: 28, marginBottom: 8 }}>⚡</div>
+                    <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>No active sprint yet</div>
+                    <div style={{ fontSize: 10, marginBottom: 14 }}>Apply to a sprint from the feed to start.</div>
+                    <Btn variant="outline" onClick={() => setScreen("feed")}>Browse sprints →</Btn>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ background: C.g50, borderRadius: 9, padding: 11, border: `0.5px solid ${C.border}`, marginBottom: 10 }}>
+                      <div style={{ fontSize: 9, fontWeight: 700, color: C.green, marginBottom: 3, fontFamily: "monospace", textTransform: "uppercase" }}>Active Sprint · Week 2 of 3</div>
+                      <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>{activeSprint.title}</div>
+                      <div style={{ fontSize: 10, color: C.muted, marginBottom: 8 }}>{activeSprint.deliverable}</div>
+                      <div style={{ height: 4, background: C.g200, borderRadius: 2, overflow: "hidden" }}>
+                        <div style={{ width: isSubmitted ? "100%" : "65%", height: "100%", background: C.green, borderRadius: 2, transition: "width .4s" }} />
+                      </div>
+                      <div style={{ fontSize: 9, color: C.muted, marginTop: 3 }}>{isSubmitted ? "100% complete" : "65% complete"}</div>
+                    </div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, marginBottom: 6, textTransform: "uppercase" }}>Messages</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 7, marginBottom: 12 }}>
+                      {activeMessages.map((m, i) => (
+                        <div key={i} style={{ alignSelf: m.from === "cm" ? "flex-end" : "flex-start", maxWidth: "85%", background: m.from === "cm" ? C.g50 : C.surface, color: m.from === "cm" ? C.g700 : C.muted, borderRadius: 9, padding: "8px 10px", fontSize: 10, lineHeight: 1.5 }}>{m.text}</div>
+                      ))}
+                    </div>
+
+                    {isSubmitted ? (
+                      <div style={{ background: C.g50, border: `0.5px solid ${C.g200}`, borderRadius: 10, padding: 12, textAlign: "center" }}>
+                        <div style={{ fontSize: 20, marginBottom: 4 }}>✅</div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: C.green, marginBottom: 2 }}>Deliverable submitted!</div>
+                        {activeDeliverable && (
+                          <div style={{ fontSize: 9, color: C.muted, marginBottom: 6 }}>📎 {activeDeliverable.name} · {fmtSize(activeDeliverable.size)}</div>
+                        )}
+                        <div style={{ fontSize: 10, color: C.muted, marginBottom: 10 }}>Badge pending NGO review.</div>
+                        <Btn variant="outline" onClick={() => setScreen("portfolio")}>View in portfolio →</Btn>
+                      </div>
+                    ) : (
+                      <>
+                        {activeMessages.length < 2 && <Btn variant="outline" onClick={sendUpdate} style={{ marginBottom: 10 }}>Send progress update</Btn>}
+                        <DeliverableInput file={file} setFile={setFile} pickedType={pickedType} setPickedType={setPickedType} note={completionNote} setNote={setCompletionNote} />
+                        <Btn disabled={!file} onClick={submitDeliverable}>{file ? "📎 Submit Deliverable" : "Choose a file to submit"}</Btn>
+                      </>
+                    )}
+                    <div style={{ height: 16 }} />
+                  </>
+                )}
+              </Scroll>
+              <NavBar active="workspace" onNav={setScreen} />
+            </>
+          )}
+
+          {/* ─── PORTFOLIO ─── */}
+          {screen === "portfolio" && (
+            <>
+              <Header title="My Portfolio" right={<span style={{ fontSize: 10, color: C.g200 }}>Share</span>} />
+              <Scroll style={{ padding: 12 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 7, marginBottom: 12 }}>
+                  {[[state.badges.length, "Sprints"], [state.badges.filter((b) => b.status === "endorsed").length, "Badges"], [Math.max(1, state.applied.length), "States"]].map(([n, l]) => (
+                    <div key={l} style={{ background: C.g50, borderRadius: 8, padding: 9, textAlign: "center", border: `0.5px solid ${C.border}` }}>
+                      <div style={{ fontSize: 20, fontWeight: 800, color: C.g900, lineHeight: 1 }}>{n}</div>
+                      <div style={{ fontSize: 9, color: C.muted, marginTop: 2 }}>{l}</div>
+                    </div>
+                  ))}
+                </div>
+                {state.badges.map((b, i) => (
+                  <div key={i} style={{ background: b.status === "awaiting" ? C.surface : C.g50, borderRadius: 10, padding: 11, marginBottom: 7, border: `0.5px solid ${b.status === "awaiting" ? C.border : C.g200}` }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 5 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700 }}>{b.ngo}</div>
+                      {b.status === "endorsed"
+                        ? <span style={{ background: C.g900, color: C.gold, fontSize: 8, fontWeight: 800, padding: "2px 7px", borderRadius: 8 }}>⭐ Endorsed</span>
+                        : <span style={{ background: C.goldBg, color: C.goldDark, fontSize: 8, fontWeight: 800, padding: "2px 7px", borderRadius: 8, border: `0.5px solid ${C.goldBorder}` }}>⏳ Awaiting review</span>}
+                    </div>
+                    <div style={{ fontSize: 9, color: C.muted, marginBottom: 6 }}>{b.title}</div>
+                    <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>{b.tags.map((t) => <Tag key={t}>{t}</Tag>)}</div>
+                  </div>
+                ))}
+
+                <div style={{ background: "#fff", border: `0.5px solid ${C.border}`, borderRadius: 10, padding: 12, marginTop: 6, marginBottom: 10 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: "uppercase", marginBottom: 6 }}>Share your feedback</div>
+                  {state.feedbackSent ? (
+                    <div style={{ background: C.g50, border: `0.5px solid ${C.g200}`, borderRadius: 8, padding: "10px 12px", textAlign: "center" }}>
+                      <div style={{ fontSize: 14, marginBottom: 2 }}>💚</div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: C.green }}>Thanks for your feedback!</div>
+                    </div>
+                  ) : (
+                    <>
+                      <textarea value={feedback} onChange={(e) => setFeedback(e.target.value)} placeholder="How is ImpactSprint working for you?"
+                        style={{ width: "100%", height: 64, borderRadius: 8, border: `1px solid ${feedback ? C.green : C.border}`, padding: "8px 10px", fontSize: 11, resize: "none", outline: "none", boxSizing: "border-box", marginBottom: 8 }} />
+                      <Btn disabled={!feedback.trim()} onClick={() => update({ feedbackSent: true })}>
+                        {feedback.trim() ? "Send feedback" : "Type something to send"}
+                      </Btn>
+                    </>
+                  )}
+                </div>
+                <Btn variant="gold" onClick={() => alert("Portfolio PDF exported — shareable via public link.")}>📄 Export as PDF</Btn>
+                <div style={{ height: 16 }} />
+              </Scroll>
+              <NavBar active="portfolio" onNav={setScreen} />
+            </>
+          )}
+
+          {/* ─── PROFILE ─── */}
+          {screen === "profile" && (
+            <>
+              <Header
+                title="My Profile"
+                right={editingProfile
+                  ? <button onClick={saveEdit} style={{ background: C.green, color: "#fff", border: "none", borderRadius: 16, padding: "5px 14px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Save</button>
+                  : <button onClick={startEdit} style={{ background: "none", color: C.g200, border: `1px solid ${C.g200}`, borderRadius: 16, padding: "5px 14px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Edit</button>}
+              />
+              <Scroll style={{ padding: 16 }}>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 18 }}>
+                  <Avatar photo={(editingProfile ? draft : profile).photo} name={(editingProfile ? draft : profile).name} size={80} />
+                  {editingProfile && (
+                    <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                      <PhotoButton label={draft.photo ? "Change photo" : "Upload photo"} onChange={(e) => handlePhoto(e, "draft")} />
+                      {draft.photo && (
+                        <button onClick={() => setDraft({ ...draft, photo: null })} style={{ background: C.redBg, color: C.red, border: `1px solid ${C.redBorder}`, borderRadius: 16, padding: "6px 14px", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>Remove</button>
+                      )}
+                    </div>
+                  )}
+                  {!editingProfile && (
+                    <>
+                      <div style={{ fontSize: 16, fontWeight: 800, color: C.g900, marginTop: 10 }}>{profile.name || "Your name"}</div>
+                      <div style={{ fontSize: 11, color: C.muted }}>{profile.discipline || "—"} · {profile.stateCode || "—"}</div>
+                    </>
+                  )}
+                </div>
+
+                {editingProfile ? (
+                  <>
+                    <Field label="Full Name" value={draft.name} onChange={(v) => setDraft({ ...draft, name: v })} valid={!!draft.name} />
+                    <Field label="Email" type="email" value={draft.email} onChange={(v) => setDraft({ ...draft, email: v })} valid={/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(draft.email)} />
+                    {(() => { const dc = validateStateCode(draft.stateCode); return (
+                    <Field label="NYSC State Code" value={draft.stateCode} onChange={(v) => setDraft({ ...draft, stateCode: v.toUpperCase() })} placeholder="e.g. LA/23A/1234" valid={dc.valid} error={dc.error} hint={dc.valid ? `${dc.state} State` : ""} />
+                    ); })()}
+                    <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 6 }}>Discipline</label>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+                      {["Law", "Engineering", "Health", "Finance", "Arts", "Sciences"].map((d) => {
+                        const on = draft.discipline === d;
+                        return <div key={d} onClick={() => setDraft({ ...draft, discipline: d })} style={{ padding: "6px 13px", borderRadius: 16, cursor: "pointer", fontSize: 11, fontWeight: on ? 700 : 400, background: on ? C.g50 : "#fff", border: `1px solid ${on ? C.green : C.border}`, color: on ? C.green : C.muted }}>{d}</div>;
+                      })}
+                    </div>
+                    <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 4 }}>Short bio</label>
+                    <textarea value={draft.bio} onChange={(e) => setDraft({ ...draft, bio: e.target.value })} placeholder="A sentence about yourself and your goals."
+                      style={{ width: "100%", height: 56, borderRadius: 10, border: `1px solid ${C.border}`, padding: "9px 12px", resize: "none", outline: "none", boxSizing: "border-box", marginBottom: 12 }} />
+                    <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 6 }}>Skills</label>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+                      {ALL_SKILLS.map((s) => {
+                        const on = draft.skills.includes(s);
+                        return <div key={s} onClick={() => toggleDraftSkill(s)} style={{ padding: "5px 11px", borderRadius: 16, fontSize: 10, cursor: "pointer", fontWeight: on ? 700 : 400, background: on ? C.g50 : "#fff", border: `1px solid ${on ? C.green : C.border}`, color: on ? C.green : C.muted }}>{s}</div>;
+                      })}
+                    </div>
+                    <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 4 }}>Weekly availability: <strong style={{ color: C.g900 }}>{draft.hours} hrs</strong></label>
+                    <input type="range" min="2" max="20" value={draft.hours} onChange={(e) => setDraft({ ...draft, hours: +e.target.value })} style={{ width: "100%", marginBottom: 14, accentColor: C.green }} />
+                    <Btn variant="ghost" onClick={() => setEditingProfile(false)}>Cancel</Btn>
+                  </>
+                ) : (
+                  <>
+                    <Card label="About">{profile.bio || <span style={{ color: C.hint }}>No bio yet — tap Edit to add one.</span>}</Card>
+                    <Card label="Contact"><div>✉ {profile.email || "—"}</div><div style={{ marginTop: 3 }}>🪪 {profile.stateCode || "—"}</div></Card>
+                    <Card label="Skills">{profile.skills.length ? <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>{profile.skills.map((s) => <Tag key={s}>{s}</Tag>)}</div> : <span style={{ color: C.hint, fontSize: 11 }}>No skills added yet.</span>}</Card>
+                    <Card label="Availability">⏱ {profile.hours} hours per week</Card>
+                    <div style={{ height: 8 }} />
+                    <Btn variant="danger" onClick={resetDemo}>Sign out & reset demo</Btn>
+                  </>
+                )}
+                <div style={{ height: 16 }} />
+              </Scroll>
+              <NavBar active="profile" onNav={setScreen} />
+            </>
+          )}
+        </Phone>
+
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, maxWidth: 380, textAlign: "center" }}>
+          <div style={{ fontSize: 11, color: C.hint, lineHeight: 1.6 }}>
+            Demo data saves to your browser only. <button onClick={resetDemo} style={{ background: "none", border: "none", color: C.green, fontWeight: 600, cursor: "pointer", padding: 0, fontSize: 11 }}>Reset demo</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const Lbl = ({ children }) => (
+    <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 5 }}>{children}</div>
+  );
+
+  const Card = ({ label, children }) => (
+    <div style={{ background: C.surface, borderRadius: 10, padding: 12, border: `0.5px solid ${C.border}`, marginBottom: 10 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: "uppercase", marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>{children}</div>
+    </div>
+  );
+
+  function PhotoButton({ label, onChange }) {
+    const ref = useRef();
+    return (
+      <>
+        <input ref={ref} type="file" accept="image/*" onChange={onChange} style={{ display: "none" }} />
+        <button onClick={() => ref.current?.click()} style={{ background: C.green, color: "#fff", border: "none", borderRadius: 16, padding: "6px 14px", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>{label}</button>
+      </>
+    );
+  }
+
+  function DeliverableInput({ file, setFile, pickedType, setPickedType, note, setNote }) {
+    const ref = useRef();
+    return (
+      <div style={{ background: "#fff", border: `0.5px solid ${C.border}`, borderRadius: 10, padding: 12, marginBottom: 10 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: C.muted, textTransform: "uppercase", marginBottom: 8 }}>Submit your deliverable</div>
+        <div style={{ fontSize: 10, color: C.muted, marginBottom: 6 }}>File type</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 10 }}>
+          {FILE_TYPES.map((ft) => {
+            const on = pickedType.ext === ft.ext;
+            return (
+              <button key={ft.ext} onClick={() => { setPickedType(ft); setFile(null); }} style={{ display: "flex", alignItems: "center", gap: 4, padding: "5px 9px", borderRadius: 14, fontSize: 10, fontWeight: on ? 700 : 400, cursor: "pointer", background: on ? C.g50 : C.surface, border: `1px solid ${on ? C.green : C.border}`, color: on ? C.green : C.muted }}>
+                <span>{ft.icon}</span>{ft.ext}
+              </button>
+            );
+          })}
+        </div>
+        <input ref={ref} type="file" accept={pickedType.accept} onChange={(e) => e.target.files?.[0] && setFile(e.target.files[0])} style={{ display: "none" }} />
+        <div onClick={() => ref.current?.click()} style={{ border: `1.5px dashed ${file ? C.green : C.border}`, borderRadius: 10, padding: "14px 10px", textAlign: "center", cursor: "pointer", background: file ? C.g50 : C.surface, marginBottom: 10 }}>
+          {file ? (
+            <>
+              <div style={{ fontSize: 20, marginBottom: 3 }}>{pickedType.icon}</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.g900 }}>{file.name}</div>
+              <div style={{ fontSize: 9, color: C.muted, marginTop: 1 }}>{fmtSize(file.size)} · tap to change</div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: 22, marginBottom: 3 }}>{pickedType.icon}</div>
+              <div style={{ fontSize: 11, color: C.muted }}>Tap to choose a {pickedType.ext} file</div>
+            </>
+          )}
+        </div>
+        <label style={{ fontSize: 10, color: C.muted, display: "block", marginBottom: 4 }}>Completion note (optional)</label>
+        <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Anything the NGO should know…"
+          style={{ width: "100%", height: 48, borderRadius: 8, border: `1px solid ${C.border}`, padding: "7px 9px", fontSize: 10, resize: "none", outline: "none", boxSizing: "border-box" }} />
+      </div>
+    );
+  }
+
+  ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
