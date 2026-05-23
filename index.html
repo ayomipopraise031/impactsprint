@@ -351,14 +351,21 @@
       }],
       feedbackSent: false,
     };
-    // Backfill new fields on existing localStorage state
+    // Backfill all fields defensively — corrupt or partial localStorage
+    // states (from older versions) would otherwise crash the render.
     return {
-      ...base,
-      profile: { phone: "", ...base.profile },
-      appliedAt: base.appliedAt || {},
-      applicationStatus: base.applicationStatus || {},
-      notifications: base.notifications || [],
-      tourSeen: base.tourSeen || false,
+      profile: { name: "", email: "", phone: "", stateCode: "", discipline: "", bio: "", skills: [], hours: 6, photo: null, ...(base.profile || {}) },
+      applied: Array.isArray(base.applied) ? base.applied : [],
+      activeSprintId: base.activeSprintId ?? null,
+      messages: base.messages && typeof base.messages === "object" ? base.messages : {},
+      submitted: base.submitted && typeof base.submitted === "object" ? base.submitted : {},
+      deliverables: base.deliverables && typeof base.deliverables === "object" ? base.deliverables : {},
+      badges: Array.isArray(base.badges) ? base.badges : [],
+      feedbackSent: !!base.feedbackSent,
+      appliedAt: base.appliedAt && typeof base.appliedAt === "object" ? base.appliedAt : {},
+      applicationStatus: base.applicationStatus && typeof base.applicationStatus === "object" ? base.applicationStatus : {},
+      notifications: Array.isArray(base.notifications) ? base.notifications : [],
+      tourSeen: !!base.tourSeen,
       view: base.view || (base.profile?.discipline ? "demo" : "landing"),
     };
   };
